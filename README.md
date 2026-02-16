@@ -26,6 +26,9 @@ Este repo usa un archivo privado con claves reales.
    - `WIFI_PASSWORD`
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_CHAT_ID`
+    - `LOCATION_LAT`
+    - `LOCATION_LON`
+    - `TIME_ZONE_INFO`
 
 > `secrets.h` está ignorado por Git en `.gitignore`.
 
@@ -43,7 +46,6 @@ Al arrancar, el dispositivo envía por Telegram un mensaje de estado con:
 
 Además, levanta un servidor web en la IP local de la ESP32-CAM:
 - `http://<IP_ESP32>/` → página HTML con estado completo
-- `http://<IP_ESP32>/estado` → estado en texto plano
 
 La página incluye información de arranque y configuración:
 - conectividad (SSID, IP, gateway, DNS, RSSI, MAC)

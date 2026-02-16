@@ -27,16 +27,8 @@
 
 const char* ssid = WIFI_SSID;
 const char* password = WIFI_PASSWORD;
-const char* TIME_ZONE_INFO = "CET-1CEST,M3.5.0/2,M10.5.0/3";  // Europe/Madrid
-const float LOCATION_LAT = 42.4680f;  // Cirueña
-const float LOCATION_LON = -2.8950f;  // Cirueña
 
-// Initialize Telegram BOT
-String BOTtoken = TELEGRAM_BOT_TOKEN;  // your Bot Token (Get from Botfather)
-
-// Use @myidbot to find out the chat ID of an individual or a group
-// Also note that you need to click "start" on a bot before it can
-// message you
+String BOTtoken = TELEGRAM_BOT_TOKEN; 
 String CHAT_ID = TELEGRAM_CHAT_ID;
 
 bool sendPhoto = false;
@@ -611,12 +603,8 @@ void handleWebRoot() {
   webServer.send(200, "text/html; charset=utf-8", buildStatusPage());
 }
 
-void handleWebStatus() {
-  webServer.send(200, "text/plain; charset=utf-8", getWebStatusText());
-}
-
 void handleWebNotFound() {
-  webServer.send(404, "text/plain; charset=utf-8", "Ruta no encontrada. Usa / o /estado");
+  webServer.send(404, "text/plain; charset=utf-8", "Ruta no encontrada. Usa /");
 }
 
 void processScheduledCaptures() {
@@ -898,6 +886,19 @@ String sendPhotoTelegram() {
   return getBody;
 }
 
+void clearPendingTelegramUpdates() {
+  int drained = 0;
+  int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+  while (numNewMessages && drained < 50) {
+    drained++;
+    numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+  }
+
+  if (drained > 0) {
+    Serial.printf("Mensajes pendientes descartados al arrancar: %d\n", drained);
+  }
+}
+
 void setup(){
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); 
   // Init Serial Monitor
@@ -957,10 +958,11 @@ void setup(){
   }
 
   webServer.on("/", handleWebRoot);
-  webServer.on("/estado", handleWebStatus);
   webServer.onNotFound(handleWebNotFound);
   webServer.begin();
   appendBootLog("Servidor web iniciado en http://" + WiFi.localIP().toString() + "/");
+
+  clearPendingTelegramUpdates();
 
   String startupMessage = getBootStatusMessage();
   startupMessage += "\n\nUsa /inicio para ver los comandos.";
