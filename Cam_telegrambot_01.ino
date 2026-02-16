@@ -403,17 +403,6 @@ void loadScheduleConfig() {
 String getSchedulingStatus() {
   String status = "Programación:\n";
 
-  if (!isTimeSynced()) {
-    status += "- Hora actual: no sincronizada (NTP)\n";
-  } else {
-    time_t now = time(nullptr);
-    struct tm localNow;
-    localtime_r(&now, &localNow);
-    char nowBuffer[32];
-    strftime(nowBuffer, sizeof(nowBuffer), "%Y-%m-%d %H:%M:%S", &localNow);
-    status += "- Hora actual: " + String(nowBuffer) + "\n";
-  }
-
   bool anyProgramActive = scheduleFixedEnabled || scheduleSunriseEnabled || scheduleSunsetEnabled;
   if (!anyProgramActive) {
     status += "- Estado: sin programación activa\n";
@@ -454,8 +443,6 @@ String getBootStatusMessage() {
   msg += "- RSSI: " + String(WiFi.RSSI()) + " dBm\n";
   msg += "- microSD: ";
   msg += sdCardReady ? "lista\n" : "no disponible\n";
-  msg += "- Flash: ";
-  msg += flashState ? "encendido\n" : "apagado\n";
   msg += getSchedulingStatus();
   return msg;
 }
@@ -949,7 +936,7 @@ void setup(){
   Serial.println(WiFi.localIP()); 
   appendBootLog("WiFi conectado. IP: " + WiFi.localIP().toString());
 
-  configTzTime(TIME_ZONE_INFO, "pool.ntp.org", "time.nist.gov");
+  configTzTime(TIME_ZONE_INFO, "pool.ntp.org");
   Serial.println("Sincronizando NTP...");
   int ntpRetries = 0;
   while (!isTimeSynced() && ntpRetries < 40) {
@@ -975,7 +962,9 @@ void setup(){
   webServer.begin();
   appendBootLog("Servidor web iniciado en http://" + WiFi.localIP().toString() + "/");
 
-  bot.sendMessage(CHAT_ID, getBootStatusMessage(), "");
+  String startupMessage = getBootStatusMessage();
+  startupMessage += "\n\nUsa /inicio para ver los comandos.";
+  bot.sendMessage(CHAT_ID, startupMessage, "");
 }
 
 void loop() {
