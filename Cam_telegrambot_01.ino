@@ -40,7 +40,6 @@ String BOTtoken = TELEGRAM_BOT_TOKEN;  // your Bot Token (Get from Botfather)
 String CHAT_ID = TELEGRAM_CHAT_ID;
 
 bool sendPhoto = false;
-bool savePhotoSD = false;
 bool sdCardReady = false;
 bool deleteAllPending = false;
 unsigned long deleteAllPendingSince = 0;
@@ -70,6 +69,9 @@ UniversalTelegramBot bot(BOTtoken, clientTCP);
 
 #define FLASH_LED_PIN 4
 bool flashState = LOW;
+bool flashActive = false;
+unsigned long flashStartedAt = 0;
+const unsigned long flashOnDurationMs = 20000;
 
 //Checks for new messages every 1 second.
 int botRequestDelay = 1000;
@@ -515,8 +517,8 @@ String getCommandsTelegramMarkdown() {
   commands += "📸 *Captura y flash*\n";
   commands += "- */inicio* : muestra esta ayuda\n";
   commands += "- */foto* : toma una foto y la envía por Telegram\n";
-  commands += "- */guardar* : toma una foto y la guarda en microSD\n";
-  commands += "- */flash* : enciende/apaga el flash\n\n";
+  commands += "- */flash* : enciende el flash durante 20s y se apaga\n";
+  commands += "- */reiniciar* : reinicia el ESP32\n\n";
   commands += "💾 *Gestión microSD*\n";
   commands += "- */listar* : lista las fotos de la microSD\n";
   commands += "- */borrar <nombre.jpg>* : borra una foto de la microSD\n";
@@ -542,8 +544,8 @@ String getCommandsHtml() {
   html += "<h3>📸 Captura y flash</h3><ul>";
   html += "<li><strong>/inicio</strong>: muestra esta ayuda</li>";
   html += "<li><strong>/foto</strong>: toma una foto y la envía por Telegram</li>";
-  html += "<li><strong>/guardar</strong>: toma una foto y la guarda en microSD</li>";
-  html += "<li><strong>/flash</strong>: enciende/apaga el flash</li>";
+  html += "<li><strong>/flash</strong>: enciende el flash durante 20s y se apaga</li>";
+  html += "<li><strong>/reiniciar</strong>: reinicia el ESP32</li>";
   html += "</ul>";
   html += "<h3>💾 Gestión microSD</h3><ul>";
   html += "<li><strong>/listar</strong>: lista las fotos de la microSD</li>";
@@ -648,13 +650,8 @@ void processScheduledCaptures() {
   int ydayNow = localNow.tm_yday;
 
   if (scheduleFixedEnabled && minuteNow == scheduleFixedMinuteOfDay && lastFixedTriggerYday != ydayNow) {
-    if (sdCardReady) {
-      savePhotoSD = true;
-      bot.sendMessage(CHAT_ID, "Programación automática: foto de hora fija (microSD)", "");
-    } else {
-      sendPhoto = true;
-      bot.sendMessage(CHAT_ID, "Programación automática: foto de hora fija (Telegram, sin microSD)", "");
-    }
+    sendPhoto = true;
+    bot.sendMessage(CHAT_ID, "Programación automática: foto de hora fija (Telegram + microSD si está disponible)", "");
     lastFixedTriggerYday = ydayNow;
   }
 
@@ -705,17 +702,22 @@ void handleNewMessages(int numNewMessages) {
       bot.sendMessage(CHAT_ID, welcome, "Markdown");
     }
     if (text == "/flash") {
-      flashState = !flashState;
+      flashState = HIGH;
+      flashActive = true;
+      flashStartedAt = millis();
       digitalWrite(FLASH_LED_PIN, flashState);
-      Serial.println("Estado del flash cambiado");
+      bot.sendMessage(CHAT_ID, "Flash encendido 20 segundos. Se apagará automáticamente.", "");
+      Serial.println("Flash encendido durante 20s");
+    }
+    if (text == "/reiniciar") {
+      bot.sendMessage(CHAT_ID, "Reiniciando ESP32...", "");
+      Serial.println("Reinicio solicitado por Telegram");
+      delay(100);
+      ESP.restart();
     }
     if (text == "/foto") {
       sendPhoto = true;
       Serial.println("Enviando foto...");
-    }
-    if (text == "/guardar") {
-      savePhotoSD = true;
-      Serial.println("Guardando foto en microSD...");
     }
     if (text == "/listar") {
       if (!sdCardReady) {
@@ -980,24 +982,23 @@ void loop() {
   webServer.handleClient();
   processScheduledCaptures();
 
-  if (sendPhoto) {
-    Serial.println("Preparando foto");
-    sendPhotoTelegram(); 
-    sendPhoto = false; 
+  if (flashActive && (millis() - flashStartedAt >= flashOnDurationMs)) {
+    flashState = LOW;
+    flashActive = false;
+    digitalWrite(FLASH_LED_PIN, flashState);
+    Serial.println("Flash apagado automáticamente tras 20s");
   }
 
-  if (savePhotoSD) {
-    if (!sdCardReady) {
-      bot.sendMessage(CHAT_ID, "La microSD no está lista", "");
-    } else {
+  if (sendPhoto) {
+    Serial.println("Preparando foto");
+    sendPhotoTelegram();
+    if (sdCardReady) {
       String savedPath = savePhotoToSDCard();
-      if (savedPath.length() > 0) {
-        bot.sendMessage(CHAT_ID, "Foto guardada: " + savedPath, "");
-      } else {
+      if (savedPath.length() == 0) {
         bot.sendMessage(CHAT_ID, "No se pudo guardar la foto en la microSD", "");
       }
     }
-    savePhotoSD = false;
+    sendPhoto = false; 
   }
 
   if (millis() > lastTimeBotRan + botRequestDelay)  {
