@@ -402,14 +402,19 @@ String getSchedulingStatus() {
   String status = "Programación:\n";
 
   if (!isTimeSynced()) {
-    status += "- Hora: no sincronizada (NTP)\n";
+    status += "- Hora actual: no sincronizada (NTP)\n";
   } else {
     time_t now = time(nullptr);
     struct tm localNow;
     localtime_r(&now, &localNow);
     char nowBuffer[32];
     strftime(nowBuffer, sizeof(nowBuffer), "%Y-%m-%d %H:%M:%S", &localNow);
-    status += "- Hora: " + String(nowBuffer) + "\n";
+    status += "- Hora actual: " + String(nowBuffer) + "\n";
+  }
+
+  bool anyProgramActive = scheduleFixedEnabled || scheduleSunriseEnabled || scheduleSunsetEnabled;
+  if (!anyProgramActive) {
+    status += "- Estado: sin programación activa\n";
   }
 
   status += "- Hora fija: ";
@@ -503,6 +508,63 @@ String getCurrentTimeString() {
   return String(buffer);
 }
 
+String getCommandsTelegramMarkdown() {
+  String commands;
+  commands.reserve(1200);
+  commands += "Comandos disponibles por tipo:\n\n";
+  commands += "📸 *Captura y flash*\n";
+  commands += "- */inicio* : muestra esta ayuda\n";
+  commands += "- */foto* : toma una foto y la envía por Telegram\n";
+  commands += "- */guardar* : toma una foto y la guarda en microSD\n";
+  commands += "- */flash* : enciende/apaga el flash\n\n";
+  commands += "💾 *Gestión microSD*\n";
+  commands += "- */listar* : lista las fotos de la microSD\n";
+  commands += "- */borrar <nombre.jpg>* : borra una foto de la microSD\n";
+  commands += "- */borrar_todo* : solicita borrar todas las fotos\n";
+  commands += "- */confirmar_borrado* : confirma el borrado masivo\n";
+  commands += "- */cancelar_borrado* : cancela el borrado masivo\n\n";
+  commands += "⏱️ *Programación automática*\n";
+  commands += "- */prog_hora HH:MM* : foto diaria a una hora fija\n";
+  commands += "- */prog_amanecer* : serie cada 2 min entre -30/+30 de amanecer\n";
+  commands += "- */prog_atardecer* : serie cada 2 min entre -30/+30 de atardecer\n";
+  commands += "- */stop_hora* : detiene la hora fija\n";
+  commands += "- */stop_amanecer* : detiene la serie de amanecer\n";
+  commands += "- */stop_atardecer* : detiene la serie de atardecer\n";
+  commands += "- */stop_todo* : detiene toda la programación automática\n";
+  commands += "- */estado_programacion* : muestra el estado actual\n";
+  return commands;
+}
+
+String getCommandsHtml() {
+  String html;
+  html.reserve(1700);
+  html += "<h2>Comandos</h2>";
+  html += "<h3>📸 Captura y flash</h3><ul>";
+  html += "<li><strong>/inicio</strong>: muestra esta ayuda</li>";
+  html += "<li><strong>/foto</strong>: toma una foto y la envía por Telegram</li>";
+  html += "<li><strong>/guardar</strong>: toma una foto y la guarda en microSD</li>";
+  html += "<li><strong>/flash</strong>: enciende/apaga el flash</li>";
+  html += "</ul>";
+  html += "<h3>💾 Gestión microSD</h3><ul>";
+  html += "<li><strong>/listar</strong>: lista las fotos de la microSD</li>";
+  html += "<li><strong>/borrar &lt;nombre.jpg&gt;</strong>: borra una foto de la microSD</li>";
+  html += "<li><strong>/borrar_todo</strong>: solicita borrar todas las fotos</li>";
+  html += "<li><strong>/confirmar_borrado</strong>: confirma el borrado masivo</li>";
+  html += "<li><strong>/cancelar_borrado</strong>: cancela el borrado masivo</li>";
+  html += "</ul>";
+  html += "<h3>⏱️ Programación automática</h3><ul>";
+  html += "<li><strong>/prog_hora HH:MM</strong>: foto diaria a una hora fija</li>";
+  html += "<li><strong>/prog_amanecer</strong>: serie cada 2 min entre -30/+30 de amanecer</li>";
+  html += "<li><strong>/prog_atardecer</strong>: serie cada 2 min entre -30/+30 de atardecer</li>";
+  html += "<li><strong>/stop_hora</strong>: detiene la hora fija</li>";
+  html += "<li><strong>/stop_amanecer</strong>: detiene la serie de amanecer</li>";
+  html += "<li><strong>/stop_atardecer</strong>: detiene la serie de atardecer</li>";
+  html += "<li><strong>/stop_todo</strong>: detiene toda la programación automática</li>";
+  html += "<li><strong>/estado_programacion</strong>: muestra el estado actual</li>";
+  html += "</ul>";
+  return html;
+}
+
 String getWebStatusText() {
   String status;
   status.reserve(2048);
@@ -540,15 +602,18 @@ String getWebStatusText() {
 String buildStatusPage() {
   String body = getWebStatusText();
   String html;
-  html.reserve(body.length() + 512);
+  String commandsHtml = getCommandsHtml();
+  html.reserve(body.length() + commandsHtml.length() + 700);
   html += "<!doctype html><html lang='es'><head><meta charset='utf-8'>";
   html += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
   html += "<meta http-equiv='refresh' content='5'>";
   html += "<title>ESP32-CAM Estado</title>";
   html += "<style>body{font-family:Arial,sans-serif;margin:16px;background:#f5f5f5;}";
-  html += "h1{font-size:20px;}pre{white-space:pre-wrap;background:#fff;border:1px solid #ddd;padding:12px;border-radius:8px;}</style>";
+  html += "h1{font-size:20px;}h2{margin-top:20px;}h3{margin:12px 0 6px;}ul{margin-top:6px;}";
+  html += "pre{white-space:pre-wrap;background:#fff;border:1px solid #ddd;padding:12px;border-radius:8px;}</style>";
   html += "</head><body><h1>ESP32-CAM - Estado de arranque y configuración</h1>";
   html += "<pre>" + htmlEscape(body) + "</pre>";
+  html += commandsHtml;
   html += "</body></html>";
   return html;
 }
@@ -636,24 +701,8 @@ void handleNewMessages(int numNewMessages) {
     String from_name = bot.messages[i].from_name;
     if (text == "/inicio") {
       String welcome = "Bienvenido, " + from_name + "\n";
-      welcome += "Comandos disponibles:\n";
-      welcome += "/foto : toma una foto y la envía por Telegram\n";
-      welcome += "/guardar : toma una foto y la guarda en microSD\n";
-      welcome += "/listar : lista las fotos de la microSD\n";
-      welcome += "/borrar <nombre.jpg> : borra una foto de la microSD\n";
-      welcome += "/borrar_todo : solicita borrar todas las fotos\n";
-      welcome += "/confirmar_borrado : confirma el borrado masivo\n";
-      welcome += "/cancelar_borrado : cancela el borrado masivo\n";
-      welcome += "/prog_hora HH:MM : foto diaria a una hora fija\n";
-      welcome += "/prog_amanecer : serie cada 2 min entre -30/+30 de amanecer\n";
-      welcome += "/prog_atardecer : serie cada 2 min entre -30/+30 de atardecer\n";
-      welcome += "/stop_hora : detiene la hora fija\n";
-      welcome += "/stop_amanecer : detiene la serie de amanecer\n";
-      welcome += "/stop_atardecer : detiene la serie de atardecer\n";
-      welcome += "/stop_todo : detiene toda la programación automática\n";
-      welcome += "/estado_programacion : muestra el estado actual\n";
-      welcome += "/flash : enciende/apaga el flash\n";
-      bot.sendMessage(CHAT_ID, welcome, "");
+      welcome += getCommandsTelegramMarkdown();
+      bot.sendMessage(CHAT_ID, welcome, "Markdown");
     }
     if (text == "/flash") {
       flashState = !flashState;
