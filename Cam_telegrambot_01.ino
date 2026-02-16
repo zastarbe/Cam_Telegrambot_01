@@ -20,6 +20,7 @@
 #include "esp_camera.h"
 #include "FS.h"
 #include "SD_MMC.h"
+#include <WebServer.h>
 #include <UniversalTelegramBot.h>
 #include <ArduinoJson.h>
 #include "secrets.h"
@@ -60,6 +61,9 @@ unsigned long lastSchedulerCheckMs = 0;
 const unsigned long schedulerCheckDelayMs = 10000;
 Preferences preferences;
 const char* PREF_NS = "cam_cfg";
+WebServer webServer(80);
+String bootLog;
+unsigned long bootStartMs = 0;
 
 WiFiClientSecure clientTCP;
 UniversalTelegramBot bot(BOTtoken, clientTCP);
@@ -449,6 +453,118 @@ String getBootStatusMessage() {
   return msg;
 }
 
+String htmlEscape(const String &value) {
+  String escaped = value;
+  escaped.replace("&", "&amp;");
+  escaped.replace("<", "&lt;");
+  escaped.replace(">", "&gt;");
+  return escaped;
+}
+
+void appendBootLog(const String &line) {
+  Serial.println(line);
+  bootLog += line + "\n";
+}
+
+String getCameraFrameSizeText() {
+  sensor_t *sensor = esp_camera_sensor_get();
+  if (!sensor) {
+    return "desconocido";
+  }
+
+  switch (sensor->status.framesize) {
+    case FRAMESIZE_QQVGA: return "QQVGA";
+    case FRAMESIZE_QCIF: return "QCIF";
+    case FRAMESIZE_HQVGA: return "HQVGA";
+    case FRAMESIZE_240X240: return "240x240";
+    case FRAMESIZE_QVGA: return "QVGA";
+    case FRAMESIZE_CIF: return "CIF";
+    case FRAMESIZE_HVGA: return "HVGA";
+    case FRAMESIZE_VGA: return "VGA";
+    case FRAMESIZE_SVGA: return "SVGA";
+    case FRAMESIZE_XGA: return "XGA";
+    case FRAMESIZE_HD: return "HD";
+    case FRAMESIZE_SXGA: return "SXGA";
+    case FRAMESIZE_UXGA: return "UXGA";
+    default: return "otro";
+  }
+}
+
+String getCurrentTimeString() {
+  if (!isTimeSynced()) {
+    return "No sincronizada";
+  }
+
+  time_t now = time(nullptr);
+  struct tm localNow;
+  localtime_r(&now, &localNow);
+  char buffer[32];
+  strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &localNow);
+  return String(buffer);
+}
+
+String getWebStatusText() {
+  String status;
+  status.reserve(2048);
+
+  status += "Estado actual\n";
+  status += "============\n";
+  status += "Dispositivo: ESP32-CAM\n";
+  status += "Firmware compilado: " + String(__DATE__) + " " + String(__TIME__) + "\n";
+  status += "Uptime (s): " + String((millis() - bootStartMs) / 1000) + "\n";
+  status += "Tiempo local: " + getCurrentTimeString() + "\n";
+  status += "Zona horaria: " + String(TIME_ZONE_INFO) + "\n";
+  status += "Lat/Lon: " + String(LOCATION_LAT, 4) + ", " + String(LOCATION_LON, 4) + "\n";
+  status += "\nConectividad\n------------\n";
+  status += "SSID: " + String(ssid) + "\n";
+  status += "IP: " + WiFi.localIP().toString() + "\n";
+  status += "Gateway: " + WiFi.gatewayIP().toString() + "\n";
+  status += "DNS: " + WiFi.dnsIP().toString() + "\n";
+  status += "MAC: " + WiFi.macAddress() + "\n";
+  status += "RSSI: " + String(WiFi.RSSI()) + " dBm\n";
+  status += "\nHardware\n--------\n";
+  status += "microSD: " + String(sdCardReady ? "lista" : "no disponible") + "\n";
+  status += "PSRAM: " + String(psramFound() ? "sí" : "no") + "\n";
+  status += "Heap libre: " + String(ESP.getFreeHeap()) + " bytes\n";
+  status += "Flash LED: " + String(flashState ? "encendido" : "apagado") + "\n";
+  status += "Frame cámara: " + getCameraFrameSizeText() + "\n";
+  status += "\nConfiguración\n-------------\n";
+  status += "Bot poll delay (ms): " + String(botRequestDelay) + "\n\n";
+  status += getSchedulingStatus() + "\n";
+  status += "\nLog de arranque\n---------------\n";
+  status += bootLog;
+
+  return status;
+}
+
+String buildStatusPage() {
+  String body = getWebStatusText();
+  String html;
+  html.reserve(body.length() + 512);
+  html += "<!doctype html><html lang='es'><head><meta charset='utf-8'>";
+  html += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
+  html += "<meta http-equiv='refresh' content='5'>";
+  html += "<title>ESP32-CAM Estado</title>";
+  html += "<style>body{font-family:Arial,sans-serif;margin:16px;background:#f5f5f5;}";
+  html += "h1{font-size:20px;}pre{white-space:pre-wrap;background:#fff;border:1px solid #ddd;padding:12px;border-radius:8px;}</style>";
+  html += "</head><body><h1>ESP32-CAM - Estado de arranque y configuración</h1>";
+  html += "<pre>" + htmlEscape(body) + "</pre>";
+  html += "</body></html>";
+  return html;
+}
+
+void handleWebRoot() {
+  webServer.send(200, "text/html; charset=utf-8", buildStatusPage());
+}
+
+void handleWebStatus() {
+  webServer.send(200, "text/plain; charset=utf-8", getWebStatusText());
+}
+
+void handleWebNotFound() {
+  webServer.send(404, "text/plain; charset=utf-8", "Ruta no encontrada. Usa / o /estado");
+}
+
 void processScheduledCaptures() {
   if (!isTimeSynced()) {
     return;
@@ -748,9 +864,11 @@ void setup(){
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); 
   // Init Serial Monitor
   Serial.begin(115200);
+  bootStartMs = millis();
+  appendBootLog("Iniciando ESP32-CAM...");
 
   loadScheduleConfig();
-  Serial.println("Configuración de programación cargada (NVS)");
+  appendBootLog("Configuración de programación cargada (NVS)");
 
   // Set LED Flash as output
   pinMode(FLASH_LED_PIN, OUTPUT);
@@ -758,9 +876,11 @@ void setup(){
 
   // Config and init the camera
   configInitCamera();
+  appendBootLog("Cámara inicializada");
 
   // Init SD card
   sdCardReady = initSDCard();
+  appendBootLog(String("microSD: ") + (sdCardReady ? "lista" : "no disponible"));
 
   // Connect to Wi-Fi
   WiFi.mode(WIFI_STA);
@@ -776,6 +896,7 @@ void setup(){
   Serial.println();
   Serial.print("ESP32-CAM IP Helbidea: ");
   Serial.println(WiFi.localIP()); 
+  appendBootLog("WiFi conectado. IP: " + WiFi.localIP().toString());
 
   configTzTime(TIME_ZONE_INFO, "pool.ntp.org", "time.nist.gov");
   Serial.println("Sincronizando NTP...");
@@ -792,15 +913,22 @@ void setup(){
     localtime_r(&now, &localNow);
     char nowBuffer[32];
     strftime(nowBuffer, sizeof(nowBuffer), "%Y-%m-%d %H:%M:%S", &localNow);
-    Serial.println("Hora sincronizada: " + String(nowBuffer));
+    appendBootLog("Hora sincronizada: " + String(nowBuffer));
   } else {
-    Serial.println("No se pudo completar la sincronización NTP");
+    appendBootLog("No se pudo completar la sincronización NTP");
   }
+
+  webServer.on("/", handleWebRoot);
+  webServer.on("/estado", handleWebStatus);
+  webServer.onNotFound(handleWebNotFound);
+  webServer.begin();
+  appendBootLog("Servidor web iniciado en http://" + WiFi.localIP().toString() + "/");
 
   bot.sendMessage(CHAT_ID, getBootStatusMessage(), "");
 }
 
 void loop() {
+  webServer.handleClient();
   processScheduledCaptures();
 
   if (sendPhoto) {

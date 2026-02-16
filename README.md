@@ -41,6 +41,16 @@ Al arrancar, el dispositivo envía por Telegram un mensaje de estado con:
 - IP local
 - estado WiFi, microSD, NTP y programación activa
 
+Además, levanta un servidor web en la IP local de la ESP32-CAM:
+- `http://<IP_ESP32>/` → página HTML con estado completo
+- `http://<IP_ESP32>/estado` → estado en texto plano
+
+La página incluye información de arranque y configuración:
+- conectividad (SSID, IP, gateway, DNS, RSSI, MAC)
+- hardware (microSD, PSRAM, heap libre, estado flash, frame de cámara)
+- hora/NTP, zona horaria, ubicación y programación activa
+- log de arranque registrado durante `setup()`
+
 ## 4) Comandos de Telegram
 
 ### Captura y flash
