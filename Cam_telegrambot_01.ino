@@ -126,7 +126,7 @@ void configInitCamera(){
   // camera init
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
-    Serial.printf("Camera init failed with error 0x%x", err);
+    Serial.printf("Error al iniciar la cámara: 0x%x", err);
     delay(1000);
     ESP.restart();
   }
@@ -138,32 +138,32 @@ void configInitCamera(){
 
 bool initSDCard() {
   if (!SD_MMC.begin("/sdcard", true)) {
-    Serial.println("SD_MMC mount failed");
+    Serial.println("Error al montar SD_MMC");
     return false;
   }
 
   uint8_t cardType = SD_MMC.cardType();
   if (cardType == CARD_NONE) {
-    Serial.println("No SD card attached");
+    Serial.println("No hay tarjeta SD conectada");
     return false;
   }
 
   uint64_t cardSizeMB = SD_MMC.cardSize() / (1024 * 1024);
-  Serial.printf("SD Card Size: %lluMB\n", cardSizeMB);
+  Serial.printf("Tamaño de la tarjeta SD: %lluMB\n", cardSizeMB);
   return true;
 }
 
 String savePhotoToSDCard() {
   camera_fb_t *fb = esp_camera_fb_get();
   if (!fb) {
-    Serial.println("Camera capture failed");
+    Serial.println("Error al capturar la imagen");
     return "";
   }
 
   String path = "/photo_" + String(millis()) + ".jpg";
   File file = SD_MMC.open(path, FILE_WRITE);
   if (!file) {
-    Serial.println("Failed to open file in SD");
+    Serial.println("No se pudo abrir el archivo en la SD");
     esp_camera_fb_return(fb);
     return "";
   }
@@ -173,11 +173,11 @@ String savePhotoToSDCard() {
   esp_camera_fb_return(fb);
 
   if (written == fb->len) {
-    Serial.println("Photo saved to SD: " + path);
+    Serial.println("Foto guardada en SD: " + path);
     return path;
   }
 
-  Serial.println("Failed to write complete photo to SD");
+  Serial.println("No se pudo escribir la foto completa en la SD");
   return "";
 }
 
@@ -554,14 +554,14 @@ String getWebStatusText() {
   status += "============\n";
   status += "Dispositivo: ESP32-CAM\n";
   status += "Firmware compilado: " + String(__DATE__) + " " + String(__TIME__) + "\n";
-  status += "Uptime (s): " + String((millis() - bootStartMs) / 1000) + "\n";
+  status += "Tiempo activo (s): " + String((millis() - bootStartMs) / 1000) + "\n";
   status += "Tiempo local: " + getCurrentTimeString() + "\n";
   status += "Zona horaria: " + String(TIME_ZONE_INFO) + "\n";
-  status += "Lat/Lon: " + String(LOCATION_LAT, 4) + ", " + String(LOCATION_LON, 4) + "\n";
+  status += "Latitud/Longitud: " + String(LOCATION_LAT, 4) + ", " + String(LOCATION_LON, 4) + "\n";
   status += "\nConectividad\n------------\n";
   status += "SSID: " + String(ssid) + "\n";
   status += "IP: " + WiFi.localIP().toString() + "\n";
-  status += "Gateway: " + WiFi.gatewayIP().toString() + "\n";
+  status += "Puerta de enlace: " + WiFi.gatewayIP().toString() + "\n";
   status += "DNS: " + WiFi.dnsIP().toString() + "\n";
   status += "MAC: " + WiFi.macAddress() + "\n";
   status += "RSSI: " + String(WiFi.RSSI()) + " dBm\n";
@@ -569,10 +569,10 @@ String getWebStatusText() {
   status += "microSD: " + String(sdCardReady ? "lista" : "no disponible") + "\n";
   status += "PSRAM: " + String(psramFound() ? "sí" : "no") + "\n";
   status += "Heap libre: " + String(ESP.getFreeHeap()) + " bytes\n";
-  status += "Flash LED: " + String(flashState ? "encendido" : "apagado") + "\n";
+  status += "LED flash: " + String(flashState ? "encendido" : "apagado") + "\n";
   status += "Frame cámara: " + getCameraFrameSizeText() + "\n";
   status += "\nConfiguración\n-------------\n";
-  status += "Bot poll delay (ms): " + String(botRequestDelay) + "\n\n";
+  status += "Retardo de consulta del bot (ms): " + String(botRequestDelay) + "\n\n";
   status += getSchedulingStatus() + "\n";
   status += "\nLog de arranque\n---------------\n";
   status += bootLog;
@@ -652,7 +652,7 @@ void processScheduledCaptures() {
 }
 
 void handleNewMessages(int numNewMessages) {
-  Serial.print("Handle New Messages: ");
+  Serial.print("Procesando mensajes nuevos: ");
   Serial.println(numNewMessages);
 
   for (int i = 0; i < numNewMessages; i++) {
@@ -813,17 +813,17 @@ String sendPhotoTelegram() {
   camera_fb_t * fb = NULL;
   fb = esp_camera_fb_get();  
   if(!fb) {
-    Serial.println("Camera capture failed");
+    Serial.println("Error al capturar la imagen");
     delay(1000);
     ESP.restart();
-    return "Camera capture failed";
+    return "Error al capturar la imagen";
   }  
   
-  Serial.println("Connect to " + String(myDomain));
+  Serial.println("Conectando con " + String(myDomain));
 
 
   if (clientTCP.connect(myDomain, 443)) {
-    Serial.println("Connection successful");
+    Serial.println("Conexión correcta");
     
     String head = "--RandomNerdTutorials\r\nContent-Disposition: form-data; name=\"chat_id\"; \r\n\r\n" + CHAT_ID + "\r\n--RandomNerdTutorials\r\nContent-Disposition: form-data; name=\"photo\"; filename=\"esp32-cam.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n";
     String tail = "\r\n--RandomNerdTutorials--\r\n";
@@ -880,8 +880,8 @@ String sendPhotoTelegram() {
     Serial.println(getBody);
   }
   else {
-    getBody="Connected to api.telegram.org failed.";
-    Serial.println("Connected to api.telegram.org failed.");
+    getBody="Error al conectar con api.telegram.org.";
+    Serial.println("Error al conectar con api.telegram.org.");
   }
   return getBody;
 }
@@ -924,7 +924,7 @@ void setup(){
   // Connect to Wi-Fi
   WiFi.mode(WIFI_STA);
   Serial.println();
-  Serial.print("Connecting to ");
+  Serial.print("Conectando a ");
   Serial.println(ssid);
   WiFi.begin(ssid, password);
   clientTCP.setCACert(TELEGRAM_CERTIFICATE_ROOT); // Add root certificate for api.telegram.org
@@ -933,7 +933,7 @@ void setup(){
     delay(500);
   }
   Serial.println();
-  Serial.print("ESP32-CAM IP Helbidea: ");
+  Serial.print("IP de ESP32-CAM: ");
   Serial.println(WiFi.localIP()); 
   appendBootLog("WiFi conectado. IP: " + WiFi.localIP().toString());
 
@@ -995,7 +995,7 @@ void loop() {
   if (millis() > lastTimeBotRan + botRequestDelay)  {
     int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     while (numNewMessages) {
-      Serial.println("got response");
+      Serial.println("respuesta recibida");
       handleNewMessages(numNewMessages);
       numNewMessages = bot.getUpdates(bot.last_message_received + 1);
     }
