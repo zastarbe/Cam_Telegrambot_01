@@ -1,0 +1,7 @@
+# Secrets
+secrets.h
+
+# Build artifacts / temporary files
+*.tmp
+*.log
+*.bak
